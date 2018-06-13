@@ -1,0 +1,44 @@
+
+/*
+ *  bpdu-errors.slax
+ *
+ *  Matthew Bergersen Lewis (mbergersenlewis@tesla.com)
+ *  Tesla
+ *  2018 June 06
+ *
+ *  Version History
+ *  ===============
+ *  v1.0         2018 June 06 Initial release.
+ * installation:
+ * copy the script to /var/db/scripts/op/bpdu-errors.slax
+ *
+ * add this line to your config:
+ * set system scripts op file bpdu-errors.slax
+ *
+ * WARNING!!! when you upgrade junos, /var is wiped clean, all scripts are gone.
+ * a better solution is to install your scripts on a server and load them from it.
+ *
+ * set system scripts op file bpdu-errors.slax
+ */
+version 1.0;
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+import "../import/junos.xsl";
+
+var $rpc = {
+             <get-interface-information>;
+         }
+         var $result = jcs:invoke($rpc);
+match / {
+              <op-script-results> {
+              <output> {
+                       expr jcs:printf("%10s %10s %10s %16s %16s %16s\n", "Interface", "Admin Status", "Oper Status", "    BPDU-Error", "", "Last Interface Flap");
+                       }
+               for-each ($result//logical-interface[starts-with(name, "ge-")]) {
+                    <output> {
+                         expr jcs:printf("%10s %10s %10s %16s %16s %16s\n", name, ../admin-status, ../oper-status, ../bpdu-error, "", ../interface-flapped);
+                      }
+                 }
+              }
+           }
