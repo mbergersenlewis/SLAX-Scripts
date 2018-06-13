@@ -1,0 +1,97 @@
+
+/*  handle-int-flap.slax
+*
+*  Matthew Bergersen Lewis (mbergersenlewis@tesla.com)
+*  Tesla
+*  2018 June 11
+*
+*  Version History
+*  ===============
+*  v1.0         2018 June 11 Initial release.
+*
+* Installation:
+* 1) Copy the script to /var/db/scripts/event
+*
+* 2) Configure event policy:  
+*  event-options {
+*      policy LINK-FLAP {
+*           events snmp_link_down;
+*          within 60 {
+*              trigger after 5;    
+*              events snmp_trap_link_down;
+*          }
+*          attributes-match {
+*              "{$$.interface-name}" equals snmp_trap_link_down.interface-name;
+*          }
+*          then {
+*               event-script handle-int-flap.slax;
+*          }
+*      }
+*  }
+*
+* 3) Apply Macro 
+* set interfaces ge-X/X/X apply-macro DISABLE-ON-FLAP
+*
+* 4) add this line to your config:
+* set event-options event-script file handle-link-flap.slax
+*
+* WARNING!!! when you upgrade junos, /var is wiped clean, all scripts are gone.
+* a better solution is to install your scripts on a server and load them from it.
+*
+*/
+
+version 1.0;
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+import "../import/junos.xsl";
+
+template disable-interface($interface, $comment) {
+       <configuration> {
+            <interfaces> {
+             <interface> {
+                  <junos:comment> $comment;
+                  <name> $interface;
+                  <disable>;
+                  <description> $comment;
+               }
+            }
+          }
+        }
+match / {
+         <event-script-results> {
+ var $interface = event-script-input/trigger-event/attribute-list/attribute/value[../name=="interface-name"];
+ var $get-config-rpc = {
+                <get-configuration database="committed" inherit="inherit"> {
+                    <configuration> {
+                        <interfaces> {
+                            <interface> {
+                                <name> $interface;
+                            }
+                        }
+                    }
+                }
+            }
+var $result = jcs:invoke($get-config-rpc);
+
+if (!jcs:empty($result/interfaces/interface[apply-macro/name=="DISABLE-ON-FLAP" && name==$interface])) {
+var $comment = "Event Script has disabled this interface on " _ $localtime _ " because it flapped 5 times in 1 minute";
+var $message = "handle-int-flap.slax " _ "disabled interface " _ $interface;
+var $connection = jcs:open();
+var $configuration = call disable-interface($interface, $comment);
+var $commit-options = {
+                        <commit-options> {
+                                <log> $message;
+                        }
+                };
+                var $config-result := { call jcs:load-configuration($connection, $configuration, $commit-options);
+                }; 
+                expr jcs:close($connection);
+ if ($config-result//xnm:error ) {
+                    expr jcs:syslog("user.err", "handle-int-flap.slax failed to disable " _ "interface " _ $interface _ " because: " _ $config-result//xnm:error/message);
+                } else {
+                    expr jcs:syslog("user.info", $message);
+                  }
+                }
+              }
+          }
