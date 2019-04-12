@@ -1,0 +1,44 @@
+/*
+ *  show-storm-errors.slax
+ *
+ *  2019 Jan 09
+ *
+ *  Version History
+ *  ===============
+ *  v1.0         2019 Jan 07 Initial release.
+ * installation:
+ * copy the script to /var/db/scripts/op/show-storm-errors.slax
+ *
+ * add this line to your config:
+ * set system scripts op file show-storm-errors.slax description "This script shows interface flag information including storm control flags (eg. Interface, STP state, Logical interface flags) on all interfaces"
+ *
+ * WARNING!!! when you upgrade junos, /var is wiped clean, all scripts are gone.
+ * a better solution is to install your scripts on a server and load them from it.
+ *
+ * set system scripts op file show-storm-errors.slax
+ */
+version 1.0;
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+import "../import/junos.xsl";
+
+var $rpc = {
+             <get-ethernet-switching-interface-information>;
+         }
+         var $result = jcs:invoke($rpc);
+match / {
+              <op-script-results> {
+              <output> {
+                       expr jcs:printf(" *** Logical Interface flags (DL - disable learning, AD - packet action drop, LH - MAC limit hit, DN - interface down, SCTL - shutdown by Storm-control, MMAS - Mac-move action shutdown, AS - Autostate-exclude enable) *** \n");
+                       }
+              <output> {
+                       expr jcs:printf("%10s %16s %16s %10s\n", "Interface", "Vlan name", "  STP state", "  Logical interface flags");
+                       }
+               for-each ($result//l2ng-l2ald-iff-interface-entry) {
+                    <output> {
+                         expr jcs:printf("%10s %16s %16s %10s\n", ./l2iff-interface-name, ./l2iff-interface-vlan-name, ./l2iff-interface-vlan-member-stp-state, ./l2iff-interface-flags);
+                      }
+                 }
+              }
+           }
