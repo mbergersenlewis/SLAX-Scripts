@@ -1,0 +1,42 @@
+/*
+ *  mac-address-count.slax
+ *
+ *  2018 July 31
+ *
+ *  Version History
+ *  ===============
+ *  v1.0         2018 July 31 Initial release.
+ * installation:
+ * copy the script to /var/db/scripts/op/mac-address-count.slax
+ *
+ * add this line to your config:
+ * set system scripts op file mac-address-count.slax
+ *
+ * WARNING!!! when you upgrade junos, /var is wiped clean, all scripts are gone.
+ * a better solution is to install your scripts on a server and load them from it.
+ *
+ * set system scripts op file mac-address-count.slax
+ */
+version 1.0;
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+import "../import/junos.xsl";
+
+    var $cli_command = <command> "show ethernet-switching table count";
+    var $switch-output = jcs:invoke( $cli_command );
+
+    match / {
+              <op-script-results> {
+              <output> {
+                       expr jcs:printf("%10s %10s %10s %10s\n", "Interface.PIC:VLAN_ID", "|", "Mac address count");
+                       }
+               for-each ( $switch-output//l2ng-l2ald-rtb-if-mac-count-entry[starts-with(interface-name, "ge-")] ) {
+                if ( ./mac-count > "0") {
+                    <output> {
+                         expr jcs:printf("%10s %16s %10s %10s\n", ./interface-name, "|", ./mac-count, "|");
+                              }
+                        }
+                    }
+                  }
+                }
