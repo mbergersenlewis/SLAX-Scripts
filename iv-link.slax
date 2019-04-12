@@ -1,0 +1,297 @@
+/*
+ *  iv-link.slax
+ *
+ *  2009 Feb 06
+ *
+ *  Version History
+ *  ===============
+ *  v1.0         2009 Feb 06 Initial release.
+ *  v1.1         2009 Mar 06 Added remote switch link status
+ *  v1.2         2009 Mar 08 cleanup on partner-status and time
+ *  v1.4         2012 Apr 23 added one more character to permit proper display port numbes on line cards 10 - 99 on the EX8200's
+ *  v1.5         2014 Mar 23 added interface flap date
+ *  v1.6         2016 Jan 06 added model and junos version
+ *  v1.7         2017 Jan 16 updated Junos version location
+
+ * installation:
+ * copy the script to /var/db/scripts/op/iv-link.slax
+ *
+ * add this line to your config:
+ * set system scripts op file iv-link.slax
+ *
+ * WARNING!!! when you upgrade junos, /var is wiped clean, all scripts are gone.
+ * a better solution is to install your scripts on a server and load them from it.
+ *
+ * set system scripts op file iv-link.slax
+ *
+ * usage:
+ * you can get data on all interface by running without any arguments
+ *
+ * # op iv-link
+ *                            Admin  Oper                                     Bytes      Bytes      Errors     Errors     Partner Partner Partner
+ * Port       Description     Status Status Vlan            Speed      Duplex Input      Output     Input      Output     Status  Duplex  Speed
+ * ge-0/0/0                   up     up     vlan32          Auto       Auto   17520      12903163   0          0          Error   unkn    10 Mbps
+ * ge-0/0/1                   up     down   default         Auto       Auto   0          0          0          0
+ * ge-0/0/2                   up     up     vlan32          Auto       Auto   2460       12906541   0          0          OK      full    100 Mbps
+ *
+ * you can get data on one interface by running with an interface <physical-interface> argument
+ *
+ * # op iv-link interface ge-0/0/1
+ *                            Admin  Oper                                     Bytes      Bytes      Errors     Errors     Partner Partner Partner
+ * Port       Description     Status Status Vlan            Speed      Duplex Input      Output     Input      Output     Status  Duplex  Speed
+ * ge-0/0/0                   up     up     vlan32          Auto       Auto   17520      12903163   0          0          Error   unkn    10 Mbps
+ *
+ */
+
+/*
+*  the next 5 lines are standard junosscript boilerplate, must have it.
+*/
+version 1.0;
+
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+
+import "../import/junos.xsl";
+
+/*
+*  get command line arguments
+*/
+var $arguments = {
+    <argument> {
+        <name> "interface";
+        <description> "Name of physical interface (e.g. ge-0/0/0)";
+    }
+    <argument> {
+        <name> "title";
+        <description> "Enter 'no' if you do not want to see the title.";
+    }
+}
+
+/*
+*  make command-line argument global
+*/
+param $interface;
+param $title;
+
+match / {
+  <op-script-results> {
+
+    /*
+    *  get Version and Model data to parse
+    */
+    var $command-ver = <command> "show version";
+    var $show-ver = jcs:invoke( $command-ver );
+
+    /*
+    *  get interface data to parse
+    */
+    var $command-int = <command> "show interfaces extensive";
+    var $show-int = jcs:invoke( $command-int );
+
+    /*
+    *  get interface vlan data to parse
+    */
+    var $command-eth = <command> "show ethernet-switching interfaces detail";
+    var $show-eth = jcs:invoke( $command-eth );
+
+    /*
+    *  get vlan data to parse
+    */
+    var $command-time = <command> "show system uptime";
+    var $show-time = jcs:invoke( $command-time );
+
+    /*
+    *  print title header
+    */
+    if ( not ($title )) {
+      <output> "* /var/db/scripts/op/iv-link.slax v1.7";
+      <output> "* Tesla";
+      <output> "* ";
+      <output> "* Thomas S. Burnett";
+      <output> "* tburnett\@tesla.com";
+      <output> "* ";
+
+      /*
+      *  get hardware model and junos version for multi re systems:
+      */
+      if ( $show-ver/multi-routing-engine-item/re-name ) {
+          for-each ( $show-ver/multi-routing-engine-item ) {
+              var $junos-fpc = re-name;
+              var $junos-model = software-information/product-model;
+              var $junos-version = software-information/junos-version;
+/*              var $junos-version = software-information/package-information/comment;
+              var $pattern1 ="\\[";
+              var $pattern2 ="\\]";
+              var $split1 = jcs:split($pattern1, $junos-version);
+              var $split2 = jcs:split($pattern2, $split1[2]);
+              <output> jcs:printf( "%s %s %s %s %s", "* MODEL", $junos-model, $junos-fpc, "JUNOS VERSION", $split2[1] ); */
+              <output> jcs:printf( "%s %s %s %s %s", "* MODEL", $junos-model, $junos-fpc, "JUNOS VERSION", $junos-version );
+          }
+      }
+      /*
+      *  get hardware model and junos version for single re systems:
+      */
+      else {
+          var $junos-model = $show-ver/product-model;
+          var $junos-fpc = {
+              if ( $junos-model == "ex3200-48t" ) {
+                  expr "fpc0";
+              }
+              else if (  $junos-model == "ex2200-24t-4g" ) {
+                  expr "fpc0";
+              }
+              else if (  $junos-model == "ex2200-48t-4g" ) {
+                  expr "fpc0";
+              }
+              else if (  $junos-model == "ex2200-c-12p-2g" ) {
+                  expr "fpc0";
+              }
+              else if (  $junos-model == "ex2200-48p-4g" ) {
+                  expr "fpc0";
+              }
+              else if (  $junos-model == "ex2200-24t-4g" ) {
+                  expr "fpc0";
+              }
+              else {
+                  expr "node0";
+              }
+          }
+          var $junos-version = $show-ver/package-information/comment;
+          var $pattern1 ="\\[";
+          var $pattern2 ="\\]";
+          var $split1 = jcs:split($pattern1, $junos-version);
+          var $split2 = jcs:split($pattern2, $split1[2]);
+          <output> jcs:printf( "%s %s %s %s %s", "* MODEL", $junos-model, $junos-fpc, "JUNOS VERSION", $split2[1] );
+      }
+      <output> "* ";
+
+      /*
+      *  found that time from multi-RE's needed to be treated a bit differently
+      */
+      if ( $show-time/current-time/date-time ) {
+        <output> "* System time: " _ $show-time/current-time/date-time;
+      }
+      else {
+        <output> "* System time: " _ $show-time/multi-routing-engine-item/system-uptime-information/current-time/date-time;
+      }
+      <output> "* ";
+    }
+
+    /*
+    *  print output header
+    */
+    <output> jcs:printf("%-10.10s %-40.40s %-6s %-6s %-15.14s %-10s %-6s %10s %10s %10s %10s %-7s %-8s %-9s %-10s",
+       "", "", "Admin", "Oper", "", "", "", "Bytes", "Bytes", "Errors", "Errors", "Partner", "Partner", "Partner", "Last");
+    <output> jcs:printf("%-10.10s %-40.40s %-6s %-6s %-15.14s %-10s %-6s %10s %10s %10s %10s %-7s %-8s %-9s %-10s",
+       "Port", "Description", "Status", "Status", "Vlan", "Speed", "Duplex", "Input", "Output", "Input", "Output", "Status", "Duplex", "Speed", "Flap");
+
+    /*
+    *  extract the data i want from the show interface command and assign it to variables
+    */
+    for-each ( $show-int/physical-interface ) {
+      var $physical     = name;
+/*      var $flap         = interface-flapped/@junos:seconds;
+*/
+      var $flap       = interface-flapped;
+
+      var $logical-name = logical-interface/name;
+      var $phy-des      = description;
+      var $admin-stat   = admin-status;
+      var $oper-status  = oper-status;
+      var $rawspeed     = speed;
+      var $speed = {
+        if ( $rawspeed == "Unspecified" ) {
+          <output> "xxxmbps";
+        }
+        else {
+          <output> $rawspeed;
+        }
+      }
+      var $duplex = {
+        if ( duplex ) {
+          <output> duplex;
+        }
+        else {
+          <output> "na";
+        }
+      }
+      var $in-bytes     = logical-interface/local-traffic-statistics/input-bytes;
+      var $out-bytes    = logical-interface/local-traffic-statistics/output-bytes;
+      var $in-err       = input-error-list/input-errors;
+      var $out-err      = output-error-list/output-errors;
+      var $partner-statu = ethernet-autonegotiation/link-partner-status;
+      var $partner-duplex = ethernet-autonegotiation/link-partner-duplexity;
+      var $partner-speed = {
+        if ( ethernet-autonegotiation/link-partner-speed ) {
+          <output> ethernet-autonegotiation/link-partner-speed;
+        }
+        else {
+          <output> "na";
+        }
+      }
+      var $partner-status = {
+        if ( $partner-statu == "Negotiation error" ) {
+          <output> "Error";
+        }
+        else {
+          <output> $partner-statu;
+        }
+      }
+
+      /*
+      *  ignore interfaces i don't want to print data on
+      */
+      if ( ( not ( $physical == "bme0"     ) ) and
+           ( not ( $physical == ".local."  ) ) and
+           ( not ( jcs:empty ( $logical-name ) ) ) ) {
+
+        /*
+        *  extract trunk, inet or vlan data
+        */
+        var $family = {
+
+          /*
+          *  is this interface a trunk
+          */
+          if ( logical-interface/address-family/address-family-flags/ifff-port-mode-trunk ) {
+            <output> "TRUNK";
+
+          }
+
+          /*
+          *  is this a family inet interface
+          */
+          else if ( logical-interface/address-family/interface-address/ifa-local ) {
+            <output> "INET";
+          }
+          else {
+
+          /*
+          *  get interface vlan id
+          */
+            for-each ( $show-eth/interface [ interface-name == $logical-name ] ) {
+              var $vlan = interface-vlan-member-list/interface-vlan-member/interface-vlan-name;
+              <output> $vlan;
+            }
+          }
+        }
+        /*
+        *  print the merged data to the screen for all interfaces
+        */
+        if ( not ( $interface ) ) {
+          <output> jcs:printf("%-10.10s %-40.40s %-6s %-6s %-15.14s %-10.9s %-6.4s %10s %10s %10s %10.8s %-7.6s %-7.4s %10s %10s",
+            $physical, $phy-des, $admin-stat, $oper-status, $family, $speed, $duplex, $in-bytes, $out-bytes, $in-err, $out-err, $partner-status, $partner-duplex, $partner-speed, $flap);
+        }
+
+        /*
+        *  print merged data to the screen for interfaces provided in the cli
+        */
+        else if ( $physical == $interface ) {
+          <output> jcs:printf("%-10.10s %-40.40s %-6s %-6s %-15.14s %-10.9s %-6.4s %10s %10s %10s %10.8s %-7.6s %-7.4s %10s %10s",
+            $physical, $phy-des, $admin-stat, $oper-status, $family, $speed, $duplex, $in-bytes, $out-bytes, $in-err, $out-err, $partner-status, $partner-duplex, $partner-speed, $flap);
+        }
+      } /* if output */
+    } /* for-each show-int */
+  }
+}
